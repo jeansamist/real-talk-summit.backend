@@ -15,7 +15,10 @@ const FRONTEND_URL =
   process.env.FRONTEND_URL ?? "https://real-talk-summitwebsite.vercel.app";
 const FRONTEND_URL_DEV = process.env.FRONTEND_URL_DEV ?? "http://localhost:5500";
 
-const allowedOrigins = [FRONTEND_URL, FRONTEND_URL_DEV].filter(Boolean);
+const allowedOrigins = new Set(
+  [FRONTEND_URL, FRONTEND_URL_DEV].filter(Boolean),
+);
+const isDev = NODE_ENV !== "production";
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 if (!stripeSecretKey) {
@@ -84,7 +87,7 @@ type CheckoutBody = {
     email: string;
     name?: string;
   };
-  deliveryAddress: {
+  deliveryAddress?: {
     line1: string;
     line2?: string;
     city: string;
@@ -92,10 +95,11 @@ type CheckoutBody = {
     postalCode: string;
     country: string;
   };
+  deliveryAddressText?: string;
 };
 
 function pickBaseUrl(origin?: string) {
-  if (origin && allowedOrigins.includes(origin)) {
+  if (origin && allowedOrigins.has(origin)) {
     return origin;
   }
   return NODE_ENV === "production" ? FRONTEND_URL : FRONTEND_URL_DEV;
@@ -117,6 +121,24 @@ function parseAddress(metadataValue?: string) {
   } catch {
     return null;
   }
+}
+
+function formatAddressForEmail(options: {
+  structured: CheckoutBody["deliveryAddress"] | null;
+  text?: string | null;
+}) {
+  if (options.text) {
+    return options.text;
+  }
+  if (!options.structured) return "Not provided";
+  return [
+    options.structured.line1,
+    options.structured.line2,
+    `${options.structured.city}, ${options.structured.state} ${options.structured.postalCode}`,
+    options.structured.country,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 // Stripe webhook requires the raw body.
@@ -154,30 +176,25 @@ app.post(
       const customerEmail = session.customer_email ?? "";
       const customerName = session.metadata?.customerName ?? "";
       const address = parseAddress(session.metadata?.deliveryAddress);
+      const addressText = session.metadata?.deliveryAddressText ?? "";
       const orderTotal = formatAmount(
         session.amount_total,
-        session.currency ?? \"usd\",
+        session.currency ?? "usd",
       );
 
       const itemSummary = lineItems.data
         .map((item) => {
           const name = item.description ?? "Item";
-          const price = formatAmount(item.amount_total, session.currency ?? \"usd\");
+          const price = formatAmount(item.amount_total, session.currency ?? "usd");
           const quantity = item.quantity ?? 1;
           return `${quantity} x ${name} (${price})`;
         })
         .join("\n");
 
-      const addressLines = address
-        ? [
-            address.line1,
-            address.line2,
-            `${address.city}, ${address.state} ${address.postalCode}`,
-            address.country,
-          ]
-            .filter(Boolean)
-            .join("\n")
-        : "Not provided";
+      const addressLines = formatAddressForEmail({
+        structured: address,
+        text: addressText || null,
+      });
 
       if (mailer) {
         try {
@@ -214,11 +231,20 @@ app.post(
   },
 );
 
+function isAllowedOrigin(origin?: string) {
+  if (!origin) return true;
+  if (allowedOrigins.has(origin)) return true;
+  if (isDev) {
+    if (origin.startsWith("http://localhost:")) return true;
+    if (origin.startsWith("http://127.0.0.1:")) return true;
+  }
+  return false;
+}
+
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (isAllowedOrigin(origin)) return callback(null, true);
       return callback(new Error("Not allowed by CORS"));
     },
   }),
@@ -238,7 +264,9 @@ app.post("/api/checkout/create-session", async (req, res) => {
   if (!body.customer?.email) {
     return res.status(400).json({ error: "Missing customer email." });
   }
-  if (!body.deliveryAddress) {
+  const hasStructuredAddress = Boolean(body.deliveryAddress);
+  const hasTextAddress = Boolean(body.deliveryAddressText?.trim());
+  if (!hasStructuredAddress && !hasTextAddress) {
     return res.status(400).json({ error: "Missing delivery address." });
   }
 
@@ -247,9 +275,11 @@ app.post("/api/checkout/create-session", async (req, res) => {
     return res.status(400).json({ error: "Invalid itemId." });
   }
 
-  const { line1, city, state, postalCode, country } = body.deliveryAddress;
-  if (!line1 || !city || !state || !postalCode || !country) {
-    return res.status(400).json({ error: "Incomplete delivery address." });
+  if (hasStructuredAddress) {
+    const { line1, city, state, postalCode, country } = body.deliveryAddress!;
+    if (!line1 || !city || !state || !postalCode || !country) {
+      return res.status(400).json({ error: "Incomplete delivery address." });
+    }
   }
 
   const baseUrl = pickBaseUrl(req.headers.origin);
@@ -275,7 +305,10 @@ app.post("/api/checkout/create-session", async (req, res) => {
       metadata: {
         itemId: item.id,
         customerName: body.customer.name ?? "",
-        deliveryAddress: JSON.stringify(body.deliveryAddress),
+        deliveryAddress: body.deliveryAddress
+          ? JSON.stringify(body.deliveryAddress)
+          : "",
+        deliveryAddressText: body.deliveryAddressText ?? "",
       },
       success_url: `${baseUrl}/?checkout=success`,
       cancel_url: `${baseUrl}/?checkout=cancel`,
