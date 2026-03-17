@@ -77,6 +77,12 @@ const MERCH_ITEMS = {
     description: "Official Real Talk Summit long sleeve tee.",
     amount: 2000,
   },
+  ticket: {
+    id: "ticket",
+    name: "Real Talk Summit Ticket",
+    description: "General admission ticket.",
+    amount: 2500,
+  },
 } as const;
 
 type MerchItemId = keyof typeof MERCH_ITEMS;
