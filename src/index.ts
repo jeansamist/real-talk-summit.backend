@@ -1,8 +1,8 @@
-import express from "express";
 import cors from "cors";
-import Stripe from "stripe";
-import nodemailer from "nodemailer";
 import dotenv from "dotenv";
+import express from "express";
+import nodemailer from "nodemailer";
+import Stripe from "stripe";
 
 dotenv.config();
 
@@ -13,7 +13,8 @@ const NODE_ENV = process.env.NODE_ENV ?? "development";
 
 const FRONTEND_URL =
   process.env.FRONTEND_URL ?? "https://real-talk-summitwebsite.vercel.app";
-const FRONTEND_URL_DEV = process.env.FRONTEND_URL_DEV ?? "http://localhost:5500";
+const FRONTEND_URL_DEV =
+  process.env.FRONTEND_URL_DEV ?? "http://localhost:5500";
 
 const allowedOrigins = new Set(
   [FRONTEND_URL, FRONTEND_URL_DEV].filter(Boolean),
@@ -63,19 +64,19 @@ const MERCH_ITEMS = {
     id: "hoodie",
     name: "Real Talk Hoodie",
     description: "Official Real Talk Summit hoodie.",
-    amount: 3000,
+    amount: 4000,
   },
   short_tee: {
     id: "short_tee",
     name: "Real Talk Short Sleeve T-shirt",
     description: "Official Real Talk Summit short sleeve tee.",
-    amount: 2500,
+    amount: 2000,
   },
   long_tee: {
     id: "long_tee",
     name: "Real Talk Long Sleeve T-shirt",
     description: "Official Real Talk Summit long sleeve tee.",
-    amount: 2000,
+    amount: 3000,
   },
   ticket: {
     id: "ticket",
@@ -191,7 +192,10 @@ app.post(
       const itemSummary = lineItems.data
         .map((item) => {
           const name = item.description ?? "Item";
-          const price = formatAmount(item.amount_total, session.currency ?? "usd");
+          const price = formatAmount(
+            item.amount_total,
+            session.currency ?? "usd",
+          );
           const quantity = item.quantity ?? 1;
           return `${quantity} x ${name} (${price})`;
         })
