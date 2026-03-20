@@ -182,6 +182,8 @@ app.post(
       );
       const customerEmail = session.customer_email ?? "";
       const customerName = session.metadata?.customerName ?? "";
+      const itemId = session.metadata?.itemId;
+      const isTicket = itemId === "ticket";
       const address = parseAddress(session.metadata?.deliveryAddress);
       const addressText = session.metadata?.deliveryAddressText ?? "";
       const orderTotal = formatAmount(
@@ -209,22 +211,72 @@ app.post(
       if (mailer) {
         try {
           if (customerEmail) {
-            await mailer.sendMail({
-              from: emailFrom,
-              to: customerEmail,
-              subject: "Your Real Talk Summit merch order is confirmed",
-              text: `Hi${customerName ? ` ${customerName}` : ""},\n\nThank you for your order!\n\nItems:\n${itemSummary}\n\nDelivery address:\n${addressLines}\n\nOrder total: ${orderTotal}\n\nWe will follow up when your order ships.`,
-            });
+            if (isTicket) {
+              const firstName = customerName.split(" ")[0] || "there";
+              await mailer.sendMail({
+                from: emailFrom,
+                to: customerEmail,
+                subject: "Your Spot is Confirmed! — Real Talk Summit",
+                text: `Hi ${firstName},
+
+We’re excited to let you know that your spot for the Real Talk Summit – Family Matters has been successfully confirmed!
+
+Get ready for a powerful one-day experience filled with real conversations, practical wisdom, and faith-centered insights designed to strengthen families and transform homes.
+
+Event Details:
+Date: April 18th
+Location: Faith Temple Church of God of Kalamazoo (114 West North Street, Kalamazoo, MI 49007)
+Time: Doors open at 10:30 AM, Event starts at 12:00 PM
+
+This year’s theme, “Family Matters,” is all about addressing the real challenges families face today and equipping you with the tools to build stronger, healthier, and more united relationships.
+
+What to Expect:
+* Inspiring and impactful sessions
+* Honest conversations on family, relationships, and faith
+* Practical takeaways you can apply immediately
+* A welcoming community of like-minded individuals
+
+Important:
+Please keep this email as your confirmation. You may be required to present it (or your ticket) at the entrance.
+
+If you have any questions or need assistance, feel free to reply to this email—we’re here to help.
+
+We can’t wait to welcome you!
+
+Warm regards,
+The Real Talk Summit Team`,
+              });
+            } else {
+              await mailer.sendMail({
+                from: emailFrom,
+                to: customerEmail,
+                subject: "Your Real Talk Summit merch order is confirmed",
+                text: `Hi${
+                  customerName ? ` ${customerName}` : ""
+                },\n\nThank you for your order!\n\nItems:\n${itemSummary}\n\nDelivery address:\n${addressLines}\n\nOrder total: ${orderTotal}\n\nWe will follow up when your order ships.`,
+              });
+            }
           }
 
           if (adminEmails.length > 0) {
+            const subject = isTicket
+              ? "New Ticket Purchase Completed"
+              : "New Merch Purchase Completed";
+            const detailLabel = isTicket ? "Ticket Info" : "Merch Info";
+
             await mailer.sendMail({
               from: emailFrom,
               to: adminEmails,
-              subject: "New merch purchase completed",
-              text: `New merch order received.\n\nCustomer: ${
+              subject: subject,
+              text: `New ${
+                isTicket ? "ticket" : "merch"
+              } order received.\n\nCustomer: ${
                 customerName || "(not provided)"
-              }\nEmail: ${customerEmail || "(not provided)"}\n\nItems:\n${itemSummary}\n\nDelivery address:\n${addressLines}\n\nOrder total: ${orderTotal}\nStripe session: ${session.id}`,
+              }\nEmail: ${
+                customerEmail || "(not provided)"
+              }\n\n${detailLabel}:\n${itemSummary}${
+                isTicket ? "" : `\n\nDelivery address:\n${addressLines}`
+              }\n\nOrder total: ${orderTotal}\nStripe session: ${session.id}`,
             });
           }
         } catch (error) {
@@ -274,21 +326,26 @@ app.post("/api/checkout/create-session", async (req, res) => {
   if (!body.customer?.email) {
     return res.status(400).json({ error: "Missing customer email." });
   }
-  const hasStructuredAddress = Boolean(body.deliveryAddress);
-  const hasTextAddress = Boolean(body.deliveryAddressText?.trim());
-  if (!hasStructuredAddress && !hasTextAddress) {
-    return res.status(400).json({ error: "Missing delivery address." });
-  }
 
   const item = MERCH_ITEMS[body.itemId as MerchItemId];
   if (!item) {
     return res.status(400).json({ error: "Invalid itemId." });
   }
 
-  if (hasStructuredAddress) {
-    const { line1, city, state, postalCode, country } = body.deliveryAddress!;
-    if (!line1 || !city || !state || !postalCode || !country) {
-      return res.status(400).json({ error: "Incomplete delivery address." });
+  const isTicket = item.id === "ticket";
+
+  if (!isTicket) {
+    const hasStructuredAddress = Boolean(body.deliveryAddress);
+    const hasTextAddress = Boolean(body.deliveryAddressText?.trim());
+    if (!hasStructuredAddress && !hasTextAddress) {
+      return res.status(400).json({ error: "Missing delivery address." });
+    }
+
+    if (hasStructuredAddress) {
+      const { line1, city, state, postalCode, country } = body.deliveryAddress!;
+      if (!line1 || !city || !state || !postalCode || !country) {
+        return res.status(400).json({ error: "Incomplete delivery address." });
+      }
     }
   }
 
