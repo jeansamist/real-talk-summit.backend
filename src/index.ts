@@ -90,6 +90,7 @@ type MerchItemId = keyof typeof MERCH_ITEMS;
 
 type CheckoutBody = {
   itemId: string;
+  size?: string;
   customer: {
     email: string;
     name?: string;
@@ -183,6 +184,7 @@ app.post(
       const customerEmail = session.customer_email ?? "";
       const customerName = session.metadata?.customerName ?? "";
       const itemId = session.metadata?.itemId;
+      const size = session.metadata?.size;
       const isTicket = itemId === "ticket";
       const address = parseAddress(session.metadata?.deliveryAddress);
       const addressText = session.metadata?.deliveryAddressText ?? "";
@@ -199,7 +201,9 @@ app.post(
             session.currency ?? "usd",
           );
           const quantity = item.quantity ?? 1;
-          return `${quantity} x ${name} (${price})`;
+          const sizePart =
+            size && itemId !== "ticket" ? ` (Size: ${size})` : "";
+          return `${quantity} x ${name}${sizePart} (${price})`;
         })
         .join("\n");
 
@@ -333,6 +337,7 @@ app.post("/api/checkout/create-session", async (req, res) => {
   }
 
   const isTicket = item.id === "ticket";
+  let unitAmount = item.amount;
 
   if (!isTicket) {
     const hasStructuredAddress = Boolean(body.deliveryAddress);
@@ -347,6 +352,11 @@ app.post("/api/checkout/create-session", async (req, res) => {
         return res.status(400).json({ error: "Incomplete delivery address." });
       }
     }
+
+    // Price increase for larger sizes
+    if (body.size === "2XL" || body.size === "3XL") {
+      unitAmount += 300;
+    }
   }
 
   const baseUrl = pickBaseUrl(req.headers.origin);
@@ -360,9 +370,9 @@ app.post("/api/checkout/create-session", async (req, res) => {
           quantity: 1,
           price_data: {
             currency: "usd",
-            unit_amount: item.amount,
+            unit_amount: unitAmount,
             product_data: {
-              name: item.name,
+              name: item.name + (body.size ? ` (Size: ${body.size})` : ""),
               description: item.description,
             },
           },
@@ -371,6 +381,7 @@ app.post("/api/checkout/create-session", async (req, res) => {
       customer_email: body.customer.email,
       metadata: {
         itemId: item.id,
+        size: body.size ?? "",
         customerName: body.customer.name ?? "",
         deliveryAddress: body.deliveryAddress
           ? JSON.stringify(body.deliveryAddress)
