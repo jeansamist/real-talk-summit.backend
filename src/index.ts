@@ -510,24 +510,7 @@ app.post(
   },
 );
 
-function isAllowedOrigin(origin?: string) {
-  if (!origin) return true;
-  if (allowedOrigins.has(origin)) return true;
-  if (isDev) {
-    if (origin.startsWith("http://localhost:")) return true;
-    if (origin.startsWith("http://127.0.0.1:")) return true;
-  }
-  return false;
-}
-
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (isAllowedOrigin(origin)) return callback(null, true);
-      return callback(new Error("Not allowed by CORS"));
-    },
-  }),
-);
+app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
 app.get("/health", (_req, res) => {
