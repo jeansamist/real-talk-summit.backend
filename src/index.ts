@@ -149,6 +149,235 @@ function formatAddressForEmail(options: {
     .join("\n");
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function textToHtmlParagraphs(text: string) {
+  return text
+    .split("\n\n")
+    .map((block) => {
+      if (block.includes("\n* ")) {
+        const [heading, ...items] = block.split("\n");
+        const listItems = items
+          .filter((item) => item.startsWith("* "))
+          .map((item) => `<li>${escapeHtml(item.slice(2))}</li>`)
+          .join("");
+
+        return `${heading ? `<p style="margin:0 0 14px;color:#1a1917;font:400 16px/1.7 'DM Sans',Arial,sans-serif;">${escapeHtml(heading)}</p>` : ""}<ul style="margin:0 0 20px 22px;padding:0;color:#1a1917;font:400 16px/1.7 'DM Sans',Arial,sans-serif;">${listItems}</ul>`;
+      }
+
+      const html = escapeHtml(block).replaceAll("\n", "<br />");
+      return `<p style="margin:0 0 16px;color:#1a1917;font:400 16px/1.7 'DM Sans',Arial,sans-serif;">${html}</p>`;
+    })
+    .join("");
+}
+
+function renderEmailShell(options: {
+  eyebrow: string;
+  title: string;
+  intro: string;
+  bodyHtml: string;
+  accentLabel?: string;
+}) {
+  return `<!doctype html>
+<html lang="en">
+  <body style="margin:0;padding:0;background:#f4f3f1;font-family:'DM Sans',Arial,sans-serif;color:#1a1917;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(options.intro)}</div>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f4f3f1;margin:0;padding:24px 0;width:100%;">
+      <tr>
+        <td align="center">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:680px;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 20px 60px rgba(27,42,94,0.12);">
+            <tr>
+              <td style="padding:0;background:#1b2a5e;">
+                <div style="background:linear-gradient(135deg, rgba(26,5,8,0.92) 0%, rgba(200,16,46,0.92) 45%, rgba(27,42,94,0.96) 100%);padding:42px 40px 36px;">
+                  <div style="font:700 11px/1 'DM Sans',Arial,sans-serif;letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,255,255,0.72);margin:0 0 14px;">${escapeHtml(options.eyebrow)}</div>
+                  <div style="font:900 40px/1.05 Georgia,'Times New Roman',serif;letter-spacing:-0.02em;color:#ffffff;margin:0 0 14px;">${escapeHtml(options.title)}</div>
+                  <div style="width:88px;height:4px;background:#e8304a;border-radius:999px;margin:0 0 18px;"></div>
+                  <p style="margin:0;color:rgba(255,255,255,0.82);font:400 16px/1.7 'DM Sans',Arial,sans-serif;">${escapeHtml(options.intro)}</p>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:36px 40px 20px;">
+                ${options.accentLabel ? `<div style="display:inline-block;margin:0 0 22px;padding:8px 12px;border:1px solid rgba(200,16,46,0.18);background:#faf9f7;border-radius:999px;font:700 12px/1 'DM Sans',Arial,sans-serif;letter-spacing:0.12em;text-transform:uppercase;color:#c8102e;">${escapeHtml(options.accentLabel)}</div>` : ""}
+                ${options.bodyHtml}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 40px 36px;">
+                <div style="border-top:1px solid #d1cfc9;padding-top:18px;color:#6b6860;font:400 13px/1.7 'DM Sans',Arial,sans-serif;">
+                  Real Talk Summit<br />
+                  Family Matters
+                </div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+}
+
+type MailContent = {
+  subject: string;
+  text: string;
+  html: string;
+};
+
+function buildTicketCustomerEmail(customerName: string) {
+  const firstName = customerName.split(" ")[0] || "there";
+  const text = `Hi ${firstName},
+
+We’re excited to let you know that your spot for the Real Talk Summit - Family Matters has been successfully confirmed!
+
+Get ready for a powerful one-day experience filled with real conversations, practical wisdom, and faith-centered insights designed to strengthen families and transform homes.
+
+Event Details:
+Date: April 18th
+Location: Faith Temple Church of God of Kalamazoo (114 West North Street, Kalamazoo, MI 49007)
+Time: Doors open at 10:30 AM, Event starts at 12:00 PM
+
+This year’s theme, "Family Matters," is all about addressing the real challenges families face today and equipping you with the tools to build stronger, healthier, and more united relationships.
+
+What to Expect:
+* Inspiring and impactful sessions
+* Honest conversations on family, relationships, and faith
+* Practical takeaways you can apply immediately
+* A welcoming community of like-minded individuals
+
+Important:
+Please keep this email as your confirmation. You may be required to present it (or your ticket) at the entrance.
+
+If you have any questions or need assistance, feel free to reply to this email - we’re here to help.
+
+We can’t wait to welcome you!
+
+Warm regards,
+The Real Talk Summit Team`;
+
+  return {
+    subject: "Your Spot is Confirmed! - Real Talk Summit",
+    text,
+    html: renderEmailShell({
+      eyebrow: "Ticket Confirmation",
+      title: "Your Spot Is Confirmed",
+      intro:
+        "A bold, one-day gathering of real conversations, practical wisdom, and faith-centered insight.",
+      accentLabel: "Family Matters",
+      bodyHtml: textToHtmlParagraphs(text),
+    }),
+  } satisfies MailContent;
+}
+
+function buildMerchCustomerEmail(options: {
+  customerName: string;
+  itemSummary: string;
+  addressLines: string;
+  orderTotal: string;
+}) {
+  const text = `Hi${options.customerName ? ` ${options.customerName}` : ""},
+
+Thank you for your merch order.
+
+Items:
+${options.itemSummary}
+
+Delivery address:
+${options.addressLines}
+
+Order total: ${options.orderTotal}
+
+We will follow up when your order ships.
+
+The Real Talk Summit Team`;
+
+  return {
+    subject: "Your Real Talk Summit merch order is confirmed",
+    text,
+    html: renderEmailShell({
+      eyebrow: "Merch Confirmation",
+      title: "Your Order Is In",
+      intro:
+        "Your official Real Talk Summit merch purchase has been received and is now being prepared.",
+      accentLabel: "Official Merch",
+      bodyHtml: textToHtmlParagraphs(text),
+    }),
+  } satisfies MailContent;
+}
+
+function buildTicketAdminEmail(options: {
+  customerName: string;
+  customerEmail: string;
+  itemSummary: string;
+  orderTotal: string;
+  sessionId: string;
+}) {
+  const text = `A new ticket order has been received.
+
+Customer: ${options.customerName || "(not provided)"}
+Email: ${options.customerEmail || "(not provided)"}
+
+Ticket details:
+${options.itemSummary}
+
+Order total: ${options.orderTotal}
+Stripe session: ${options.sessionId}`;
+
+  return {
+    subject: "New Ticket Purchase Completed",
+    text,
+    html: renderEmailShell({
+      eyebrow: "Admin Alert",
+      title: "New Ticket Purchase",
+      intro: "A ticket checkout completed successfully.",
+      accentLabel: "Internal Notification",
+      bodyHtml: textToHtmlParagraphs(text),
+    }),
+  } satisfies MailContent;
+}
+
+function buildMerchAdminEmail(options: {
+  customerName: string;
+  customerEmail: string;
+  itemSummary: string;
+  addressLines: string;
+  orderTotal: string;
+  sessionId: string;
+}) {
+  const text = `A new merch order has been received.
+
+Customer: ${options.customerName || "(not provided)"}
+Email: ${options.customerEmail || "(not provided)"}
+
+Merch details:
+${options.itemSummary}
+
+Delivery address:
+${options.addressLines}
+
+Order total: ${options.orderTotal}
+Stripe session: ${options.sessionId}`;
+
+  return {
+    subject: "New Merch Purchase Completed",
+    text,
+    html: renderEmailShell({
+      eyebrow: "Admin Alert",
+      title: "New Merch Purchase",
+      intro: "A merch checkout completed successfully.",
+      accentLabel: "Internal Notification",
+      bodyHtml: textToHtmlParagraphs(text),
+    }),
+  } satisfies MailContent;
+}
+
 // Stripe webhook requires the raw body.
 app.post(
   "/api/stripe/webhook",
@@ -216,71 +445,55 @@ app.post(
         try {
           if (customerEmail) {
             if (isTicket) {
-              const firstName = customerName.split(" ")[0] || "there";
+              const email = buildTicketCustomerEmail(customerName);
               await mailer.sendMail({
                 from: emailFrom,
                 to: customerEmail,
-                subject: "Your Spot is Confirmed! — Real Talk Summit",
-                text: `Hi ${firstName},
-
-We’re excited to let you know that your spot for the Real Talk Summit – Family Matters has been successfully confirmed!
-
-Get ready for a powerful one-day experience filled with real conversations, practical wisdom, and faith-centered insights designed to strengthen families and transform homes.
-
-Event Details:
-Date: April 18th
-Location: Faith Temple Church of God of Kalamazoo (114 West North Street, Kalamazoo, MI 49007)
-Time: Doors open at 10:30 AM, Event starts at 12:00 PM
-
-This year’s theme, “Family Matters,” is all about addressing the real challenges families face today and equipping you with the tools to build stronger, healthier, and more united relationships.
-
-What to Expect:
-* Inspiring and impactful sessions
-* Honest conversations on family, relationships, and faith
-* Practical takeaways you can apply immediately
-* A welcoming community of like-minded individuals
-
-Important:
-Please keep this email as your confirmation. You may be required to present it (or your ticket) at the entrance.
-
-If you have any questions or need assistance, feel free to reply to this email—we’re here to help.
-
-We can’t wait to welcome you!
-
-Warm regards,
-The Real Talk Summit Team`,
+                subject: email.subject,
+                text: email.text,
+                html: email.html,
               });
             } else {
+              const email = buildMerchCustomerEmail({
+                customerName,
+                itemSummary,
+                addressLines,
+                orderTotal,
+              });
               await mailer.sendMail({
                 from: emailFrom,
                 to: customerEmail,
-                subject: "Your Real Talk Summit merch order is confirmed",
-                text: `Hi${
-                  customerName ? ` ${customerName}` : ""
-                },\n\nThank you for your order!\n\nItems:\n${itemSummary}\n\nDelivery address:\n${addressLines}\n\nOrder total: ${orderTotal}\n\nWe will follow up when your order ships.`,
+                subject: email.subject,
+                text: email.text,
+                html: email.html,
               });
             }
           }
 
           if (adminEmails.length > 0) {
-            const subject = isTicket
-              ? "New Ticket Purchase Completed"
-              : "New Merch Purchase Completed";
-            const detailLabel = isTicket ? "Ticket Info" : "Merch Info";
+            const email = isTicket
+              ? buildTicketAdminEmail({
+                  customerName,
+                  customerEmail,
+                  itemSummary,
+                  orderTotal,
+                  sessionId: session.id,
+                })
+              : buildMerchAdminEmail({
+                  customerName,
+                  customerEmail,
+                  itemSummary,
+                  addressLines,
+                  orderTotal,
+                  sessionId: session.id,
+                });
 
             await mailer.sendMail({
               from: emailFrom,
               to: adminEmails,
-              subject: subject,
-              text: `New ${
-                isTicket ? "ticket" : "merch"
-              } order received.\n\nCustomer: ${
-                customerName || "(not provided)"
-              }\nEmail: ${
-                customerEmail || "(not provided)"
-              }\n\n${detailLabel}:\n${itemSummary}${
-                isTicket ? "" : `\n\nDelivery address:\n${addressLines}`
-              }\n\nOrder total: ${orderTotal}\nStripe session: ${session.id}`,
+              subject: email.subject,
+              text: email.text,
+              html: email.html,
             });
           }
         } catch (error) {
