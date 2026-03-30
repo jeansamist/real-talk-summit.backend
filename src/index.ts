@@ -84,16 +84,57 @@ const MERCH_ITEMS = {
     description: "General admission ticket.",
     amount: 2500,
   },
+  sponsor_platinum: {
+    id: "sponsor_platinum",
+    name: "Platinum Sponsorship — Real Talk Summit",
+    description:
+      "Prominent logo on all event materials · social media spotlight · stage recognition · goodie bag item · vendor table · post-event metrics report.",
+    amount: 50000,
+  },
+  sponsor_gold: {
+    id: "sponsor_gold",
+    name: "Gold Sponsorship — Real Talk Summit",
+    description:
+      "Medium logo on event materials · 3 dedicated social posts · stage recognition · goodie bag item · website logo placement.",
+    amount: 35000,
+  },
+  sponsor_silver: {
+    id: "sponsor_silver",
+    name: "Silver Sponsorship — Real Talk Summit",
+    description:
+      "Logo on printed program & website · 2 social media acknowledgements · verbal recognition at the event.",
+    amount: 20000,
+  },
+  sponsor_bronze: {
+    id: "sponsor_bronze",
+    name: "Bronze Sponsorship — Real Talk Summit",
+    description:
+      "Name on printed program · social media recognition post · website logo placement.",
+    amount: 10000,
+  },
+  sponsor_supporter: {
+    id: "sponsor_supporter",
+    name: "Supporter Sponsorship — Real Talk Summit",
+    description:
+      "Name on printed program & website · social media thank-you post.",
+    amount: 5000,
+  },
 } as const;
 
 type MerchItemId = keyof typeof MERCH_ITEMS;
 
+function isSponsorship(itemId: string) {
+  return itemId.startsWith("sponsor_");
+}
+
 type CheckoutBody = {
   itemId: string;
   size?: string;
+  message?: string;
   customer: {
     email: string;
     name?: string;
+    businessName?: string;
   };
   deliveryAddress?: {
     line1: string;
@@ -343,6 +384,82 @@ Stripe session: ${options.sessionId}`;
   } satisfies MailContent;
 }
 
+function buildSponsorshipCustomerEmail(options: {
+  businessName: string;
+  tierName: string;
+  tierAmount: string;
+}) {
+  const greeting = options.businessName ? `Hi ${options.businessName},` : "Hi,";
+  const text = `${greeting}
+
+Thank you for choosing to sponsor the Real Talk Summit — Family Matters!
+
+We are thrilled to have you on board as a ${options.tierName} sponsor. Your investment of ${options.tierAmount} directly fuels an experience that strengthens families, restores hope, and builds lasting community.
+
+Here's what happens next:
+
+1. Our team will reach out within 1–2 business days to confirm your package details, collect your logo and any materials we need, and answer any questions.
+2. You will receive a formal sponsorship agreement outlining all deliverables and timelines.
+3. Your brand will be featured across all applicable touchpoints — from social media to the event stage.
+
+Event Details:
+Date: April 18th
+Location: Faith Temple Church of God of Kalamazoo (114 West North Street, Kalamazoo, MI 49007)
+Doors open at 10:30 AM, Event starts at 12:00 PM
+
+If you need anything in the meantime, simply reply to this email. We are grateful for your partnership and excited about what we're building together.
+
+Warm regards,
+The Real Talk Summit Team`;
+
+  return {
+    subject: `Sponsorship Confirmed — ${options.tierName} | Real Talk Summit`,
+    text,
+    html: renderEmailShell({
+      eyebrow: "Sponsorship Confirmation",
+      title: `${options.tierName} Sponsor`,
+      intro:
+        "Thank you for investing in the Real Talk Summit. Your partnership helps build stronger families and futures.",
+      accentLabel: options.tierAmount,
+      bodyHtml: textToHtmlParagraphs(text),
+    }),
+  } satisfies MailContent;
+}
+
+function buildSponsorshipAdminEmail(options: {
+  businessName: string;
+  customerEmail: string;
+  tierName: string;
+  orderTotal: string;
+  message: string;
+  sessionId: string;
+}) {
+  const text = `A new sponsorship payment has been received.
+
+Business: ${options.businessName || "(not provided)"}
+Email: ${options.customerEmail || "(not provided)"}
+
+Package: ${options.tierName}
+Amount: ${options.orderTotal}
+
+Message / Notes:
+${options.message || "(none)"}
+
+Stripe session: ${options.sessionId}`;
+
+  return {
+    subject: `New Sponsorship — ${options.tierName}`,
+    text,
+    html: renderEmailShell({
+      eyebrow: "Admin Alert",
+      title: "New Sponsorship Received",
+      intro: `A ${options.tierName} sponsorship checkout completed successfully.`,
+      accentLabel: "Internal Notification",
+      bodyHtml: textToHtmlParagraphs(text),
+    }),
+  } satisfies MailContent;
+}
+
 function buildMerchAdminEmail(options: {
   customerName: string;
   customerEmail: string;
@@ -415,8 +532,11 @@ app.post(
       const itemId = session.metadata?.itemId;
       const size = session.metadata?.size;
       const isTicket = itemId === "ticket";
+      const isSponsor = isSponsorship(itemId ?? "");
       const address = parseAddress(session.metadata?.deliveryAddress);
       const addressText = session.metadata?.deliveryAddressText ?? "";
+      const sponsorMessage = session.metadata?.message ?? "";
+      const businessName = session.metadata?.businessName ?? customerName;
       const orderTotal = formatAmount(
         session.amount_total,
         session.currency ?? "usd",
@@ -444,7 +564,22 @@ app.post(
       if (mailer) {
         try {
           if (customerEmail) {
-            if (isTicket) {
+            if (isSponsor) {
+              const tierName =
+                MERCH_ITEMS[itemId as MerchItemId]?.name ?? itemId ?? "Sponsorship";
+              const email = buildSponsorshipCustomerEmail({
+                businessName,
+                tierName,
+                tierAmount: orderTotal,
+              });
+              await mailer.sendMail({
+                from: emailFrom,
+                to: customerEmail,
+                subject: email.subject,
+                text: email.text,
+                html: email.html,
+              });
+            } else if (isTicket) {
               const email = buildTicketCustomerEmail(customerName);
               await mailer.sendMail({
                 from: emailFrom,
@@ -471,22 +606,36 @@ app.post(
           }
 
           if (adminEmails.length > 0) {
-            const email = isTicket
-              ? buildTicketAdminEmail({
-                  customerName,
-                  customerEmail,
-                  itemSummary,
-                  orderTotal,
-                  sessionId: session.id,
-                })
-              : buildMerchAdminEmail({
-                  customerName,
-                  customerEmail,
-                  itemSummary,
-                  addressLines,
-                  orderTotal,
-                  sessionId: session.id,
-                });
+            let email: MailContent;
+            if (isSponsor) {
+              const tierName =
+                MERCH_ITEMS[itemId as MerchItemId]?.name ?? itemId ?? "Sponsorship";
+              email = buildSponsorshipAdminEmail({
+                businessName,
+                customerEmail,
+                tierName,
+                orderTotal,
+                message: sponsorMessage,
+                sessionId: session.id,
+              });
+            } else if (isTicket) {
+              email = buildTicketAdminEmail({
+                customerName,
+                customerEmail,
+                itemSummary,
+                orderTotal,
+                sessionId: session.id,
+              });
+            } else {
+              email = buildMerchAdminEmail({
+                customerName,
+                customerEmail,
+                itemSummary,
+                addressLines,
+                orderTotal,
+                sessionId: session.id,
+              });
+            }
 
             await mailer.sendMail({
               from: emailFrom,
@@ -533,9 +682,10 @@ app.post("/api/checkout/create-session", async (req, res) => {
   }
 
   const isTicket = item.id === "ticket";
+  const isSponsor = isSponsorship(item.id);
   let unitAmount = item.amount;
 
-  if (!isTicket) {
+  if (!isTicket && !isSponsor) {
     const hasStructuredAddress = Boolean(body.deliveryAddress);
     const hasTextAddress = Boolean(body.deliveryAddressText?.trim());
     if (!hasStructuredAddress && !hasTextAddress) {
@@ -579,6 +729,8 @@ app.post("/api/checkout/create-session", async (req, res) => {
         itemId: item.id,
         size: body.size ?? "",
         customerName: body.customer.name ?? "",
+        businessName: body.customer.businessName ?? body.customer.name ?? "",
+        message: body.message ?? "",
         deliveryAddress: body.deliveryAddress
           ? JSON.stringify(body.deliveryAddress)
           : "",
